@@ -1,0 +1,46 @@
+### Python ###
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+### Jupyter ###
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+### Model weights & checkpoints ###
+lora_output/
+lora_model/
+
+### Vector database ###
+chroma_db/
+
+### Lecture materials ###
+lecture/
+
+### Sub-projects (not part of this repo) ###
+Omni_Brain_Project/
+Omni_Brain_Project-0.5b/
+
+### Training data ###
+data/train.jsonl
+
+### Logs & temp files ###
+vlm_log.txt
+yh.txt
+test_chart.png
+convert_to_ipynb.py
+
+### IDE ###
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+### OS ###
+.DS_Store
+Thumbs.db

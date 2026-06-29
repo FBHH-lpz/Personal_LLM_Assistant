@@ -1,0 +1,12 @@
+transformers
+datasets
+peft
+accelerate
+bitsandbytes
+langchain
+langchain-community
+faiss-cpu
+sentence-transformers
+jupyter
+ipykernel
+gradio
