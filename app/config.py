@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # ── CrossEncoder ───────────────────────────────────────────
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
-    reranker_device: str = "cpu"
+    reranker_device: str = "cuda"
 
     # ── Server ─────────────────────────────────────────────────
     host: str = "0.0.0.0"

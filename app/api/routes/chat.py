@@ -1,4 +1,4 @@
-"""Chat route — SSE streaming RAG responses."""
+"""Chat route — SSE streaming RAG responses with conversation persistence."""
 
 from __future__ import annotations
 
@@ -6,15 +6,14 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, get_graph
 from app.db.models import Conversation
-from app.db.sessions import get_session
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,11 @@ async def _load_history(conversation_id: str, db: AsyncSession) -> list[dict]:
         return []
 
 
-async def _save_history(conversation_id: str, messages: list[dict], db: AsyncSession) -> None:
+async def _save_history(
+    conversation_id: str,
+    messages: list[dict],
+    db: AsyncSession,
+) -> None:
     """Save conversation messages to DB."""
     result = await db.execute(
         select(Conversation).where(Conversation.id == conversation_id)
@@ -53,10 +56,10 @@ async def _save_history(conversation_id: str, messages: list[dict], db: AsyncSes
 
     conv.messages_json = json.dumps(messages, ensure_ascii=False)
     # Auto-title from first user message
-    if not conv.title:
+    if not conv.title or conv.title == "新对话":
         for m in messages:
             if m["role"] == "user":
-                conv.title = m["content"][:50]
+                conv.title = m["content"][:80]
                 break
     await db.commit()
 
@@ -69,28 +72,26 @@ async def send_message(
 ):
     """Send a message and receive a streaming RAG response via SSE.
 
-    Event stream format::
-
-        data: {"delta": "文本片段"}
-        data: {"meta": {"rewritten_query": "...", "sources": [...]}}
-        data: [DONE]
+    If `conversation_id` is omitted, a new conversation is auto-created.
+    History is loaded and persisted per conversation.
     """
-    # Load or create conversation
-    if req.conversation_id:
-        history = await _load_history(req.conversation_id, db_session)
-    else:
-        history = []
+    import uuid
+
+    # Auto-create conversation if no ID provided
+    if not req.conversation_id:
+        req.conversation_id = uuid.uuid4().hex[:12]
+
+    history = await _load_history(req.conversation_id, db_session)
+
+    # Build current message list
+    current_messages = list(history)
+    current_messages.append({"role": "user", "content": req.content})
+
+    config = {"configurable": {"thread_id": req.conversation_id or "default"}}
 
     async def event_generator():
-        # Add user message to state
-        current_messages = list(history)
-        current_messages.append({"role": "user", "content": req.content})
-
-        config = {"configurable": {"thread_id": req.conversation_id or "default"}}
-
+        nonlocal current_messages
         try:
-            full_response = ""
-            # Run the graph
             result = await graph.ainvoke(
                 {
                     "user_query": req.content,
@@ -103,17 +104,29 @@ async def send_message(
             final_text = result.get("final_response", "")
             rewritten = result.get("rewritten_query", "")
 
-            # Send metadata
-            if rewritten and rewritten != req.content:
-                yield {
-                    "event": "meta",
-                    "data": json.dumps({"rewritten_query": rewritten}, ensure_ascii=False),
-                }
+            # Add assistant response to history
+            current_messages.append({"role": "assistant", "content": final_text})
 
-            # Send full response in chunks (simulate streaming)
+            # Persist to DB
+            if req.conversation_id:
+                try:
+                    await _save_history(req.conversation_id, current_messages, db_session)
+                except Exception:
+                    logger.exception("Failed to save conversation history")
+
+            # Send metadata (conversation_id + rewritten_query)
+            meta = {"conversation_id": req.conversation_id}
+            if rewritten and rewritten != req.content:
+                meta["rewritten_query"] = rewritten
+            yield {
+                "event": "meta",
+                "data": json.dumps(meta, ensure_ascii=False),
+            }
+
+            # Send response in chunks (simulated streaming)
             chunk_size = 50
             for i in range(0, len(final_text), chunk_size):
-                chunk = final_text[i:i+chunk_size]
+                chunk = final_text[i:i + chunk_size]
                 yield {
                     "event": "delta",
                     "data": json.dumps({"delta": chunk}, ensure_ascii=False),
@@ -138,6 +151,6 @@ async def send_message_to_conversation(
     graph=Depends(get_graph),
     db_session: AsyncSession = Depends(get_db),
 ):
-    """Send a message to an existing conversation (streaming SSE)."""
+    """Send a message to an existing conversation (SSE streaming)."""
     req.conversation_id = conversation_id
     return await send_message(req, graph, db_session)
