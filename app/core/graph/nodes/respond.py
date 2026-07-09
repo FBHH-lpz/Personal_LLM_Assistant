@@ -10,19 +10,20 @@ from app.core.llm.base import ChatModel
 
 logger = logging.getLogger(__name__)
 
-RAG_SYSTEM_PROMPT = """你是一个知识库问答助手。请根据提供的参考文档回答用户的问题。
+RAG_SYSTEM_PROMPT = """你是一个课程知识库问答助手。你的知识来源于已导入的课件 PDF。
 
 规则：
-1. 如果参考文档包含答案，基于文档内容回答，并在回答末尾用 [来源: 文件名] 标注
-2. 如果参考文档不包含答案，如实告知用户，不要编造
+1. 如果知识库包含答案，基于课件内容回答，并在回答末尾用 [来源: 文件名] 标注
+2. 如果知识库不包含答案，如实告知用户，不要编造
 3. 回答要简洁、准确、有条理
-4. 如果用户问的是对话历史中讨论过的内容，结合历史和文档一起回答"""
+4. 不要说"根据参考文档"——课件是系统内置的，不是用户上传的
+5. 如果用户问的是对话历史中讨论过的内容，结合历史一起回答"""
 
 
 def build_context(docs: list[dict]) -> str:
     """Build a context string from reranked documents."""
     if not docs:
-        return "（未找到相关参考文档）"
+        return "（知识库中未找到相关内容）"
 
     parts: list[str] = []
     for i, doc in enumerate(docs, 1):
@@ -56,14 +57,14 @@ async def respond_node(
     if not needs_retrieval or not docs:
         # Greeting or chitchat — no context needed
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": "你是一个友好的AI助手。请简洁自然地回答用户。"},
+            {"role": "system", "content": "你是一个课程AI助手。请简洁自然地回答用户。"},
             {"role": "user", "content": query},
         ]
     else:
         context = build_context(docs)
         messages = [
             {"role": "system", "content": RAG_SYSTEM_PROMPT},
-            {"role": "user", "content": f"参考文档：\n{context}\n\n用户问题：{query}"},
+            {"role": "user", "content": f"知识库中的课件内容：\n{context}\n\n用户问题：{query}"},
         ]
 
     try:
