@@ -50,3 +50,4 @@ Thumbs.db
 data/
 eval/dataset.jsonl
 eval_output.txt
+eval_output*.txt
