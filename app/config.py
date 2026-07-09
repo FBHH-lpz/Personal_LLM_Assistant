@@ -25,8 +25,8 @@ class Settings(BaseSettings):
 
     # ── LLM Provider ───────────────────────────────────────────
     llm_provider: Literal["tongyi", "deepseek", "zhipu"] = "deepseek"
-    llm_model: str = "deepseek-chat"            # generation / rewrite
-    llm_model_cheap: str = "deepseek-chat"       # for query rewriting (often same)
+    llm_model: str = "deepseek-v4-pro"          # generation
+    llm_model_cheap: str = "deepseek-chat"       # for query rewriting (cheaper)
     embedding_provider: Literal["tongyi", "deepseek", "zhipu"] = "tongyi"
 
     # ── API Keys ───────────────────────────────────────────────
