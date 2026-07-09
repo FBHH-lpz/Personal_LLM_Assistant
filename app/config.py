@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # ── Project paths ──────────────────────────────────────────
     project_root: Path = Path(__file__).resolve().parent.parent
     data_dir: Path = project_root / "data"
-    milvus_db_path: str = str(project_root / "data" / "milvus_lite.db")
+    chroma_db_path: str = str(project_root / "data" / "chroma_db")
     sqlite_db_path: str = str(project_root / "data" / "app.db")
 
     # ── LLM Provider ───────────────────────────────────────────

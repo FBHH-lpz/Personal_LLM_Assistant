@@ -33,7 +33,7 @@ def _get_bm25_index() -> BM25Index:
 
 @lru_cache(maxsize=1)
 def _get_dense_store() -> DenseStore:
-    return DenseStore(db_path=settings.milvus_db_path)
+    return DenseStore(db_path=settings.chroma_db_path)
 
 
 @lru_cache(maxsize=1)

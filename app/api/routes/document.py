@@ -71,7 +71,7 @@ async def upload_document(
         from app.api.dependencies import _get_bm25_index, _get_dense_store
 
         ingestor = DocumentIngestor(
-            milvus_store=_get_dense_store(),
+            dense_store=_get_dense_store(),
             bm25_index=_get_bm25_index(),
         )
         groups = await ingestor.ingest_file(tmp_path)

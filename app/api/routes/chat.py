@@ -89,8 +89,9 @@ async def send_message(
         config = {"configurable": {"thread_id": req.conversation_id or "default"}}
 
         try:
-            # Run the graph with streaming
-            async for event in graph.astream_events(
+            full_response = ""
+            # Run the graph
+            result = await graph.ainvoke(
                 {
                     "user_query": req.content,
                     "messages": current_messages,
@@ -98,24 +99,25 @@ async def send_message(
                     "rerank_top_k": 5,
                 },
                 config=config,
-                version="v2",
-            ):
-                kind = event.get("event", "")
+            )
+            final_text = result.get("final_response", "")
+            rewritten = result.get("rewritten_query", "")
 
-                if kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk", {})
-                    if hasattr(chunk, "content") and chunk.content:
-                        yield {
-                            "event": "delta",
-                            "data": json.dumps({"delta": chunk.content}, ensure_ascii=False),
-                        }
+            # Send metadata
+            if rewritten and rewritten != req.content:
+                yield {
+                    "event": "meta",
+                    "data": json.dumps({"rewritten_query": rewritten}, ensure_ascii=False),
+                }
 
-                elif kind == "on_custom_event":
-                    # Metadata events (retrieval sources, rewrite info, etc.)
-                    yield {
-                        "event": "meta",
-                        "data": json.dumps(event.get("data", {}), ensure_ascii=False),
-                    }
+            # Send full response in chunks (simulate streaming)
+            chunk_size = 50
+            for i in range(0, len(final_text), chunk_size):
+                chunk = final_text[i:i+chunk_size]
+                yield {
+                    "event": "delta",
+                    "data": json.dumps({"delta": chunk}, ensure_ascii=False),
+                }
 
             yield {"event": "done", "data": "[DONE]"}
 

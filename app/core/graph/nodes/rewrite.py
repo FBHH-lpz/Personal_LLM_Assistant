@@ -54,9 +54,18 @@ async def rewrite_query(
         {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
     ]
 
-    # Include history as context
+    # Include history as context — normalize to plain dicts
     for msg in recent_history:
-        messages.append(msg)
+        if isinstance(msg, dict):
+            messages.append(msg)
+        elif hasattr(msg, "role") and hasattr(msg, "content"):
+            messages.append({"role": msg.role, "content": msg.content})
+        elif hasattr(msg, "type"):  # LangChain message object
+            role = getattr(msg, "type", "unknown")
+            if role == "human":
+                messages.append({"role": "user", "content": str(msg.content)})
+            elif role == "ai":
+                messages.append({"role": "assistant", "content": str(msg.content)})
 
     # Add current query
     messages.append({"role": "user", "content": user_query})

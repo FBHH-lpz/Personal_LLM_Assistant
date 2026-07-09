@@ -25,12 +25,12 @@ class DocumentIngestor:
 
     Usage::
 
-        ingestor = DocumentIngestor(milvus_store, bm25_index)
+        ingestor = DocumentIngestor(dense_store, bm25_index)
         await ingestor.ingest_file(Path("lecture/DMV_01_Intro.pdf"))
     """
 
-    def __init__(self, milvus_store, bm25_index):
-        self.milvus = milvus_store
+    def __init__(self, dense_store, bm25_index):
+        self.dense = dense_store
         self.bm25 = bm25_index
         self.chunker = ParentChildChunker(
             parent_size=settings.parent_chunk_size,
@@ -73,8 +73,7 @@ class DocumentIngestor:
         embedder = await self._get_embedder()
         embeddings = await embed_batch(child_texts, embedder)
 
-        # 5. Store in Milvus (dense)
-        # Build metadata list: each child gets its parent_id + source info
+        # 5. Store in vector DB (dense)
         metadata_list = [
             {
                 "child_id": cid,
@@ -83,8 +82,8 @@ class DocumentIngestor:
             }
             for cid in child_ids
         ]
-        await self.milvus.insert(child_ids, embeddings, metadata_list)
-        logger.info("Inserted %d vectors into Milvus", len(child_ids))
+        self.dense.insert(child_ids, embeddings, metadata_list)
+        logger.info("Inserted %d vectors into dense store", len(child_ids))
 
         # 6. Store in BM25 (sparse)
         self.bm25.index_documents(child_texts, child_ids)

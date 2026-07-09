@@ -34,7 +34,7 @@ class HybridRetriever:
 
     Usage::
 
-        retriever = HybridRetriever(milvus_store, bm25_index, embedder)
+        retriever = HybridRetriever(dense_store, bm25_index, embedder)
         docs = await retriever.search("Transformer架构是什么", top_k=20)
     """
 

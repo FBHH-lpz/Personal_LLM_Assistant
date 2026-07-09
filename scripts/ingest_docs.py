@@ -42,8 +42,8 @@ async def main():
 
     # ── Initialize storage ──────────────────────────────────
 
-    logger.info("Initializing Milvus Lite at %s", settings.milvus_db_path)
-    dense = DenseStore(db_path=settings.milvus_db_path)
+    logger.info("Initializing ChromaDB at %s", settings.chroma_db_path)
+    dense = DenseStore(db_path=settings.chroma_db_path)
     await dense.ensure_collection()
 
     # Check existing count
@@ -65,7 +65,7 @@ async def main():
     # ── Ingest ──────────────────────────────────────────────
 
     ingestor = DocumentIngestor(
-        milvus_store=dense,
+        dense_store=dense,
         bm25_index=bm25,
     )
 
@@ -104,7 +104,7 @@ async def main():
     # ── Final stats ─────────────────────────────────────────
 
     final_count = await dense.count()
-    logger.info("Final Milvus vector count: %d", final_count)
+    logger.info("Final vector count: %d", final_count)
     logger.info("Final BM25 document count: %d", len(bm25))
     logger.info("Parent chunks stored: %d", len(bm25._parents) if hasattr(bm25, "_parents") else 0)
 
