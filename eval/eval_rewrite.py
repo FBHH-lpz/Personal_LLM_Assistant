@@ -37,11 +37,13 @@ async def main():
 
     results = []
     for i, item in enumerate(dataset):
-        rewritten, needs_retrieve = await rewrite_query(
+        result = await rewrite_query(
             user_query=item["query"],
             history=item["history"],
             model=model,
         )
+        rewritten = result["primary_query"]
+        needs_retrieve = result["needs_retrieval"]
         expected = item["expected_rewrite"]
 
         # Semantic similarity check (simple case-insensitive keyword overlap)

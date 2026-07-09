@@ -21,7 +21,10 @@ class RAGState(TypedDict):
 
     # ── Rewrite ────────────────────────────────────────────────
     rewritten_query: str
-    """Query after pronoun resolution and intent completion."""
+    """Primary query after pronoun resolution and intent completion."""
+
+    rewrite_queries: list[str]
+    """All rewritten query variants for multi-query retrieval."""
 
     needs_retrieval: bool
     """Whether this message requires document retrieval."""
@@ -45,6 +48,7 @@ def initial_state(user_query: str, messages: list[dict[str, str]] | None = None)
         messages=messages or [],
         user_query=user_query,
         rewritten_query="",
+        rewrite_queries=[],
         needs_retrieval=True,
         retrieved_docs=[],
         reranked_docs=[],

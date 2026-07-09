@@ -56,15 +56,16 @@ def build_rag_graph(
     # ── Define nodes ───────────────────────────────────────
 
     async def _rewrite(state: RAGState) -> dict:
-        rewritten, needs_retrieval = await rewrite_query(
+        result = await rewrite_query(
             user_query=state["user_query"],
             history=state.get("messages", []),
             model=cheap_model,
             max_history_turns=global_settings.rewrite_history_turns,
         )
         return {
-            "rewritten_query": rewritten,
-            "needs_retrieval": needs_retrieval,
+            "rewritten_query": result["primary_query"],
+            "rewrite_queries": result["queries"],
+            "needs_retrieval": result["needs_retrieval"],
         }
 
     async def _retrieve(state: RAGState) -> dict:
