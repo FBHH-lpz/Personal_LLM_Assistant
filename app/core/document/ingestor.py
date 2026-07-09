@@ -93,12 +93,24 @@ class DocumentIngestor:
                 else:
                     logger.warning("  Page %d: VLM failed or returned empty", page_num)
 
-        # ── 3. Text chunking (cross-page context preserved) ────
+        # ── 3. Extract lecture number for metadata ───────────────
+        import re
+        lecture_num = ""
+        match = re.search(r'DMV[_]?(\d+)', filepath.stem)
+        if match:
+            lecture_num = match.group(1)
+
+        # ── 4. Text chunking (cross-page context preserved) ────
+        lecture_tag = f"[课件{lecture_num}] " if lecture_num else ""
         groups = self.chunker.chunk(parsed.text, source_metadata=parsed.metadata or {})
         for g in groups:
             g.parent_id = f"{file_prefix}_{g.parent_id}"
+            # Prepend lecture tag to parent so every chunk is findable by lecture number
+            if lecture_tag:
+                g.parent_content = lecture_tag + g.parent_content
             for c in g.children:
                 c.parent_id = g.parent_id
+                c.content = lecture_tag + c.content if lecture_tag else c.content
                 c.id = f"{g.parent_id}_c_{c.id.split('_c_')[-1]}" if "_c_" in c.id else f"{g.parent_id}_c_0"
         logger.info("Chunked: %d parents, %d children",
                      len(groups), sum(len(g.children) for g in groups))
