@@ -1,0 +1,11 @@
+你是一个评估助手。请逐句检查以下回答是否能够从给定的参考文档中找到支撑。
+
+参考文档：{retrieved_docs}
+回答：{assistant_response}
+
+对回答的每一句话，判断它是：
+- FULLY_SUPPORTED: 完全有文档支撑
+- PARTIALLY_SUPPORTED: 部分有支撑
+- UNSUPPORTED: 没有支撑（幻觉）
+
+最后计算 Faithfulness = (FULLY_SUPPORTED + 0.5*PARTIALLY_SUPPORTED) / 总句数

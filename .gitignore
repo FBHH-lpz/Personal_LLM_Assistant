@@ -11,28 +11,29 @@ build/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-### Model weights & checkpoints ###
-lora_output/
-lora_model/
+### Environment ###
+.env
+.venv/
+venv/
 
-### Vector database ###
-chroma_db/
+### Legacy (archived demo code) ###
+legacy/
 
-### Lecture materials ###
-lecture/
-
-### Sub-projects (not part of this repo) ###
-Omni_Brain_Project/
-Omni_Brain_Project-0.5b/
-
-### Training data ###
+### Old training data ###
 data/train.jsonl
 
+### Data stores (local) ###
+data/milvus_lite.db
+data/milvus_lite.db.*
+data/app.db
+data/bm25_index.pkl
+
+### Eval results (generated) ###
+eval/results/
+
 ### Logs & temp files ###
-vlm_log.txt
-yh.txt
-test_chart.png
-convert_to_ipynb.py
+*.log
+*.png
 
 ### IDE ###
 .vscode/

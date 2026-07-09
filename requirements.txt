@@ -5,6 +5,7 @@ accelerate
 bitsandbytes
 langchain
 langchain-community
+langchain-experimental
 faiss-cpu
 sentence-transformers
 jupyter

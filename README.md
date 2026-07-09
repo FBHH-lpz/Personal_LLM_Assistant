@@ -1,66 +1,88 @@
-# Personal LLM Assistant
+# Personal LLM Assistant v2.0
 
-A hands-on learning project that progressively builds a personal AI assistant — from a bare LLM pipeline all the way to a full agent with tool calling, RAG, LoRA fine-tuning, and a Gradio web UI.
+生产级 RAG 知识库问答系统，支持混合检索、多轮对话上下文管理、流式输出。
 
-Built around **Qwen2.5-0.5B-Instruct**, designed to run locally on a consumer GPU (tested on NVIDIA RTX 4060).
+Built with FastAPI + LangGraph + Milvus + BM25 + CrossEncoder.
 
-## Learning Path
+## Architecture
 
-Each script builds on the last, introducing one new concept at a time:
+```
+FastAPI (SSE streaming) → LangGraph (orchestration)
+  ├─ rewrite (指代消解 + 意图补全)
+  ├─ retrieve (BM25 + Dense 混合检索 → RRF 融合)
+  ├─ rerank (CrossEncoder 精排)
+  └─ respond (LLM 生成 + 流式输出)
+```
 
-| Script | What it teaches |
-|---|---|
-| `01_hello_llm.py` | Download and run your first LLM pipeline via ModelScope |
-| `02_embeddings.py` | Text embeddings and semantic similarity |
-| `03_rag_chroma.py` | Retrieval-Augmented Generation with ChromaDB |
-| `04_full_rag.py` | End-to-end RAG: ingestion → retrieval → generation |
-| `05_prepare_dataset.py` | Format conversation data for fine-tuning |
-| `06_train_lora.py` | LoRA fine-tuning on a custom persona (QLoRA + 4-bit) |
-| `07_test_lora.py` | Load and test your fine-tuned adapter |
-| `08_vision_llm.py` | Vision-language model for chart/image understanding |
-| `08b_multimodal_rag.py` | Multimodal RAG: images + text in the knowledge base |
-| `08c_end_to_end_vision_rag.py` | End-to-end vision RAG pipeline |
-| `09_web_ui.py` | Gradio chat interface with RAG + LoRA integration |
-| `10_agent_tool_calling.py` | LLM agent with native tool calling (time, calculator) |
+## Quick Start
+
+```bash
+# 1. 安装依赖
+pip install -e .
+
+# 2. 配置 API Key
+cp .env.example .env
+# 编辑 .env 填入你的 LLM API Key（通义/DeepSeek/智谱）
+
+# 3. 导入文档
+python scripts/ingest_docs.py
+
+# 4. 启动服务
+uvicorn app.api.main:app --reload --port 8000
+
+# 5. 打开 http://localhost:8000/docs 交互测试
+```
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/chat` | SSE streaming chat |
+| GET | `/conversations` | List conversations |
+| GET | `/conversations/{id}` | Get conversation detail |
+| DELETE | `/conversations/{id}` | Delete conversation |
+| POST | `/documents/upload` | Upload document for ingestion |
+| GET | `/documents` | List ingested documents |
+| GET | `/health` | Health check |
+| GET | `/stats` | System statistics |
+
+## Evaluation
+
+```bash
+# 生成评估数据集
+python eval/generate_dataset.py --sample 200
+
+# 运行评估
+python eval/run_eval.py --config hybrid_full --dataset eval/dataset.jsonl
+
+# 对比两个配置
+python eval/run_eval.py --compare eval/results/a.json eval/results/b.json
+```
+
+## Directory Structure
+
+```
+app/
+├── api/          # FastAPI routes + middleware
+├── core/
+│   ├── llm/      # Provider adapters (通义/DeepSeek/智谱)
+│   ├── retrieval/# Hybrid search + reranker
+│   ├── graph/    # LangGraph pipeline
+│   └── document/ # Parser + chunker + ingestor
+├── db/           # SQLAlchemy models + sessions
+eval/             # Evaluation metrics + dataset generation
+scripts/          # Batch ingestion scripts
+tests/            # Unit + integration tests
+legacy/           # Archived v1 demo scripts
+```
 
 ## Tech Stack
 
-- **Model**: Qwen2.5-0.5B-Instruct (via ModelScope)
-- **Inference**: Hugging Face Transformers + PyTorch
-- **Fine-tuning**: PEFT (LoRA/QLoRA), BitsAndBytes 4-bit quantization
-- **RAG**: LangChain + ChromaDB + BGE embeddings
-- **Vision**: Qwen2.5-VL
-- **Web UI**: Gradio
-- **Notebooks**: Jupyter (`notebooks/`)
-
-## Setup
-
-```bash
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate   # or venv\Scripts\activate on Windows
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-## Hardware Requirements
-
-- NVIDIA GPU with at least 6 GB VRAM (8 GB recommended)
-- For vision scripts: additional VRAM headroom recommended
-
-## Running
-
-Start from the beginning and work your way up:
-
-```bash
-python src/01_hello_llm.py       # Your first LLM call
-python src/09_web_ui.py          # Launch the Gradio web assistant
-python src/10_agent_tool_calling.py  # Agent with tool calling
-```
-
-Open the walkthrough notebook for a guided tour:
-
-```bash
-jupyter notebook notebooks/walkthrough.ipynb
-```
+- **LLM**: 通义千问 / DeepSeek / 智谱 GLM (cloud API)
+- **Embedding**: 通义 text-embedding-v3
+- **Orchestration**: LangGraph + SQLite checkpointing
+- **Vector Store**: Milvus Lite
+- **Sparse Retrieval**: BM25 (rank-bm25)
+- **Reranker**: BAAI/bge-reranker-v2-m3 (CrossEncoder)
+- **Web**: FastAPI + SSE streaming
+- **DB**: SQLite (via SQLAlchemy + aiosqlite)

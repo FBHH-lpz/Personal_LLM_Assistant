@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "personal-llm-assistant"
+version = "2.0.0"
+description = "Personal LLM Assistant — production RAG system with hybrid retrieval"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+
+dependencies = [
+    # ── Web Framework ──────────────────────────────────────────
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sse-starlette>=2.1.0",
+    "python-multipart>=0.0.12",
+
+    # ── RAG / Orchestration ────────────────────────────────────
+    "langgraph>=0.2.30",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "langchain-text-splitters>=0.3.0",
+
+    # ── Retrieval ──────────────────────────────────────────────
+    "milvus-lite>=2.4.0",
+    "pymilvus>=2.4.0",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.2.0",
+
+    # ── Document Processing ────────────────────────────────────
+    "pymupdf>=1.24.0",
+    "python-docx>=1.1.0",
+
+    # ── HTTP / Async ───────────────────────────────────────────
+    "aiohttp>=3.10.0",
+    "httpx>=0.28.0",
+
+    # ── Data / Config ──────────────────────────────────────────
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
+
+    # ── Utilities ──────────────────────────────────────────────
+    "python-dotenv>=1.0.0",
+    "tenacity>=9.0.0",
+    "jieba>=0.42.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+]
+eval = [
+    "ragas>=0.2.0",
+    "matplotlib>=3.10.0",
+    "numpy>=2.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
