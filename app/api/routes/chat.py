@@ -126,12 +126,13 @@ async def send_message(
                 ]
 
             # ── Step 3: Stream LLM tokens in real-time ─────────────
-            async for chunk in chat_model.achat(
+            stream = await chat_model.achat(
                 messages=messages,
                 temperature=0.7,
                 max_tokens=4096,
                 stream=True,
-            ):
+            )
+            async for chunk in stream:
                 if chunk.delta_content:
                     full_response += chunk.delta_content
                     yield {
