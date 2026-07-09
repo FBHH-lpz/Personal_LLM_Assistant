@@ -12,7 +12,7 @@ async def chat_with_assistant(message: str, history: list, conv_id_state: str):
     """Send message to RAG API and yield streaming response."""
     conv_id = conv_id_state
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=300) as client:
         body = {"content": message, "user_id": "default"}
         if conv_id:
             body["conversation_id"] = conv_id

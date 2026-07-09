@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class OpenAICompatChatModel(ChatModel):
     """Chat completion via OpenAI-compatible /chat/completions endpoint."""
 
-    def __init__(self, model_id: str, base_url: str, api_key: str, timeout: int = 120):
+    def __init__(self, model_id: str, base_url: str, api_key: str, timeout: int = 300):
         self.model_id = model_id
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
