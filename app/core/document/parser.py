@@ -23,9 +23,10 @@ def parse_pdf(filepath: Path) -> ParsedDocument:
     import fitz  # pymupdf
 
     doc = fitz.open(str(filepath))
+    num_pages = doc.page_count
     pages: list[str] = []
 
-    for page_num in range(len(doc)):
+    for page_num in range(num_pages):
         page = doc[page_num]
         text = page.get_text("text")
         if text.strip():
@@ -33,11 +34,11 @@ def parse_pdf(filepath: Path) -> ParsedDocument:
 
     doc.close()
     full_text = "\n\n".join(pages)
-    logger.info("Parsed PDF '%s': %d pages, %d chars", filepath.name, len(doc), len(full_text))
+    logger.info("Parsed PDF '%s': %d pages, %d chars", filepath.name, num_pages, len(full_text))
     return ParsedDocument(
         text=full_text,
         filename=filepath.name,
-        page_count=len(doc),
+        page_count=num_pages,
         metadata={"source": str(filepath), "type": "pdf"},
     )
 

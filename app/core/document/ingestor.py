@@ -54,8 +54,14 @@ class DocumentIngestor:
         parsed = parse_document(filepath)
         logger.info("Parsed: %s (%d chars)", parsed.filename, len(parsed.text))
 
-        # 2. Chunk
+        # 2. Chunk — prefix IDs with filename to make them globally unique
         groups = self.chunker.chunk(parsed.text, source_metadata=parsed.metadata or {})
+        file_prefix = filepath.stem.replace(" ", "_")[:32]
+        for g in groups:
+            g.parent_id = f"{file_prefix}_{g.parent_id}"
+            for c in g.children:
+                c.parent_id = g.parent_id
+                c.id = f"{g.parent_id}_c_{c.id.split('_c_')[-1]}" if "_c_" in c.id else f"{g.parent_id}_c_0"
         logger.info("Chunked into %d parent groups, %d total children",
                      len(groups), sum(len(g.children) for g in groups))
 

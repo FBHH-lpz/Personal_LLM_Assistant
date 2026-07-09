@@ -15,6 +15,7 @@ from pymilvus import (
     MilvusClient,
     connections,
 )
+from pymilvus.milvus_client.index import IndexParams
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class DenseStore:
 
         if client.has_collection(COLLECTION_NAME):
             logger.info("Milvus collection '%s' already exists", COLLECTION_NAME)
+            client.load_collection(COLLECTION_NAME)
             self._ready = True
             return
 
@@ -72,13 +74,17 @@ class DenseStore:
         )
 
         # Create IVF_FLAT index for vector search
-        client.create_index(
-            collection_name=COLLECTION_NAME,
+        index_params = IndexParams()
+        index_params.add_index(
             field_name="embedding",
             index_name="embedding_idx",
             index_type="IVF_FLAT",
             metric_type="COSINE",
             params={"nlist": 128},
+        )
+        client.create_index(
+            collection_name=COLLECTION_NAME,
+            index_params=index_params,
         )
 
         logger.info("Created Milvus collection '%s' (dim=%d)", COLLECTION_NAME, self.dim)
@@ -128,6 +134,12 @@ class DenseStore:
         Returns list of dicts with keys: id, child_id, parent_id, source, distance, embedding.
         """
         client = self._get_client()
+
+        # Ensure collection is loaded (it may be released between sessions)
+        try:
+            client.load_collection(COLLECTION_NAME)
+        except Exception:
+            pass  # Already loaded or doesn't exist yet
 
         results = client.search(
             collection_name=COLLECTION_NAME,

@@ -45,3 +45,8 @@ eval/results/
 ### OS ###
 .DS_Store
 Thumbs.db
+
+# Runtime data
+data/
+eval/dataset.jsonl
+eval_output.txt

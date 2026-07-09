@@ -11,7 +11,7 @@ from app.core.llm.base import EmbeddingProvider
 logger = logging.getLogger(__name__)
 
 # Maximum batch size per API call (provider-dependent; Tongyi allows up to ~100)
-EMBED_BATCH_SIZE = 50
+EMBED_BATCH_SIZE = 10
 # Max concurrent API calls
 MAX_CONCURRENT = 5
 
