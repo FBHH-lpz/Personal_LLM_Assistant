@@ -1,6 +1,6 @@
-"""End-to-end document ingestion pipeline.
+"""End-to-end document ingestion with structured VLM analysis and multi-vector indexing.
 
-parse → chunk → embed → store in Milvus + BM25 index
+parse → chunk → (concurrent VLM for images) → embed → store (text + images)
 """
 
 from __future__ import annotations
@@ -21,13 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentIngestor:
-    """Orchestrates the full ingestion pipeline.
-
-    Usage::
-
-        ingestor = DocumentIngestor(dense_store, bm25_index)
-        await ingestor.ingest_file(Path("lecture/DMV_01_Intro.pdf"))
-    """
+    """Orchestrates ingestion with VLM image analysis and multi-vector indexing."""
 
     def __init__(self, dense_store, bm25_index):
         self.dense = dense_store
@@ -46,34 +40,77 @@ class DocumentIngestor:
         return self._embedding_provider
 
     async def ingest_file(self, filepath: Path) -> list[ChunkGroup]:
-        """Ingest a single file into both Milvus and BM25 index.
+        """Ingest a single file with structured VLM image analysis.
 
-        Returns the ChunkGroups for downstream use.
+        1. Parse PDF (text + detect images)
+        2. Concurrent VLM: analyze all images in parallel (structured JSON)
+        3. Cross-page merge: concatenate adjacent pages for full context
+        4. Parent-child chunk text
+        5. Embed and store text chunks in main collection
+        6. Embed and store image descriptions in separate image collection
+        7. Index everything in BM25
         """
-        # 1. Parse
+        # ── 1. Parse ──────────────────────────────────────────
         parsed = parse_document(filepath)
-        logger.info("Parsed: %s (%d chars)", parsed.filename, len(parsed.text))
-
-        # 2. Chunk — prefix IDs with filename to make them globally unique
-        groups = self.chunker.chunk(parsed.text, source_metadata=parsed.metadata or {})
         file_prefix = filepath.stem.replace(" ", "_")[:32]
+        logger.info("Parsed: %s (%d chars, %d image pages)",
+                     parsed.filename, len(parsed.text), len(parsed.image_pages))
+
+        # ── 2. Concurrent VLM analysis ─────────────────────────
+        image_descriptions: list[str] = []
+        image_chunk_ids: list[str] = []
+        image_bindings: dict[int, str] = {}  # page_num → image_chunk_id
+
+        if parsed.image_pages:
+            from app.core.llm.tongyi_vlm import (
+                describe_images_concurrent,
+                structured_desc_to_text,
+            )
+
+            # Build image paths list
+            img_paths = [ip["image_path"] for ip in parsed.image_pages]
+
+            logger.info("Analyzing %d images with VLM (concurrent, max %d)...",
+                        len(img_paths), 5)
+
+            # Concurrent VLM calls!
+            results = await describe_images_concurrent(img_paths)
+
+            for i, (img_info, desc) in enumerate(zip(parsed.image_pages, results)):
+                page_num = img_info["page_number"]
+                if desc and desc.get("type"):
+                    # Convert structured JSON to searchable text
+                    chunk_text = structured_desc_to_text(desc, filepath.name, page_num)
+                    if chunk_text:
+                        img_id = f"{file_prefix}_img_p{page_num}"
+                        image_descriptions.append(chunk_text)
+                        image_chunk_ids.append(img_id)
+                        image_bindings[page_num] = img_id
+                        logger.debug("  Page %d: %s described (%d chars)",
+                                     page_num, desc.get("type"), len(chunk_text))
+                    else:
+                        logger.warning("  Page %d: empty description", page_num)
+                else:
+                    logger.warning("  Page %d: VLM failed or returned empty", page_num)
+
+        # ── 3. Text chunking (cross-page context preserved) ────
+        groups = self.chunker.chunk(parsed.text, source_metadata=parsed.metadata or {})
         for g in groups:
             g.parent_id = f"{file_prefix}_{g.parent_id}"
             for c in g.children:
                 c.parent_id = g.parent_id
                 c.id = f"{g.parent_id}_c_{c.id.split('_c_')[-1]}" if "_c_" in c.id else f"{g.parent_id}_c_0"
-        logger.info("Chunked into %d parent groups, %d total children",
+        logger.info("Chunked: %d parents, %d children",
                      len(groups), sum(len(g.children) for g in groups))
 
-        # 3. Collect all child texts for embedding
+        # ── 4. Embed text chunks ──────────────────────────────
         child_texts = [c.content for g in groups for c in g.children]
         child_ids = [c.id for g in groups for c in g.children]
 
-        # 4. Embed
         embedder = await self._get_embedder()
         embeddings = await embed_batch(child_texts, embedder)
 
-        # 5. Store in vector DB (dense)
+        # ── 5. Store text in main collection ──────────────────
         metadata_list = [
             {
                 "child_id": cid,
@@ -83,23 +120,46 @@ class DocumentIngestor:
             for cid in child_ids
         ]
         self.dense.insert(child_ids, embeddings, metadata_list)
-        logger.info("Inserted %d vectors into dense store", len(child_ids))
-
-        # 6. Store in BM25 (sparse)
         self.bm25.index_documents(child_texts, child_ids)
 
-        # 7. Store parent chunks (for context retrieval later)
-        # We'll store parents in the BM25 index's metadata store
+        # ── 6. Store images in separate collection ─────────────
+        if image_descriptions:
+            img_embeddings = await embed_batch(image_descriptions, embedder)
+            img_metadata = [
+                {
+                    "child_id": iid,
+                    "parent_id": next(
+                        (c.parent_id for g in groups for c in g.children
+                         if f"_p{page}" in (c.parent_id or "")),
+                        "",
+                    ),
+                    "source": filepath.name,
+                    "type": "image_description",
+                }
+                for iid, page in zip(image_chunk_ids, image_bindings.keys())
+            ]
+            self.dense.insert_images(image_chunk_ids, img_embeddings, img_metadata)
+            self.bm25.index_documents(image_descriptions, image_chunk_ids)
+
+            # Strong binding: store image as parent for text chunks on same page
+            for iid, desc in zip(image_chunk_ids, image_descriptions):
+                self.bm25.store_parent(
+                    iid, desc,
+                    {"source": filepath.name, "type": "image_description"},
+                )
+
+        # ── 7. Store text parents ──────────────────────────────
         for g in groups:
             self.bm25.store_parent(g.parent_id, g.parent_content, g.metadata)
 
+        logger.info("Ingested %s: %d text + %d image chunks",
+                     filepath.name, len(child_ids), len(image_chunk_ids))
         return groups
 
     async def ingest_directory(self, directory: Path, glob_pattern: str = "*.pdf") -> int:
-        """Ingest all matching files in a directory. Returns count of files processed."""
+        """Ingest all matching files in a directory."""
         files = sorted(directory.glob(glob_pattern))
         logger.info("Ingesting %d files from %s", len(files), directory)
-
         count = 0
         for filepath in files:
             try:
@@ -107,7 +167,5 @@ class DocumentIngestor:
                 count += 1
             except Exception:
                 logger.exception("Failed to ingest: %s", filepath.name)
-                # Continue with remaining files
-
-        logger.info("Ingestion complete: %d/%d files succeeded", count, len(files))
+        logger.info("Ingestion complete: %d/%d files", count, len(files))
         return count

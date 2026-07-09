@@ -14,6 +14,7 @@ from chromadb.config import Settings as ChromaSettings
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "rag_chunks"
+IMAGE_COLLECTION = "rag_images"  # Separate collection for image descriptions
 
 
 class DenseStore:
@@ -139,6 +140,57 @@ class DenseStore:
         if self._collection is None:
             return 0
         return self._collection.count()
+
+    # ── Image collection (multi-vector indexing) ────────────────
+
+    async def ensure_image_collection(self) -> None:
+        """Get or create the image descriptions collection."""
+        try:
+            self._img_col = self._client.get_collection(IMAGE_COLLECTION)
+        except Exception:
+            self._img_col = self._client.create_collection(
+                name=IMAGE_COLLECTION,
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info("ChromaDB image collection '%s' created", IMAGE_COLLECTION)
+
+    def insert_images(
+        self,
+        ids: list[str],
+        embeddings: list[list[float]],
+        metadata_list: list[dict],
+    ) -> None:
+        """Insert image description vectors."""
+        if not ids or not hasattr(self, '_img_col') or self._img_col is None:
+            return
+        documents = [m.get("child_id", ids[i]) for i, m in enumerate(metadata_list)]
+        self._img_col.add(ids=ids, embeddings=embeddings, metadatas=metadata_list, documents=documents)
+        logger.debug("Inserted %d image vectors", len(ids))
+
+    async def search_images(
+        self,
+        query_embedding: list[float],
+        top_k: int = 10,
+    ) -> list[dict]:
+        """Search image descriptions."""
+        if not hasattr(self, '_img_col') or self._img_col is None or self._img_col.count() == 0:
+            return []
+        results = self._img_col.query(query_embeddings=[query_embedding], n_results=min(top_k, self._img_col.count()))
+        if not results["ids"] or not results["ids"][0]:
+            return []
+        hits = []
+        for i in range(len(results["ids"][0])):
+            meta = results["metadatas"][0][i] if results["metadatas"] else {}
+            dist = results["distances"][0][i] if results["distances"] else 0.0
+            hits.append({
+                "id": results["ids"][0][i],
+                "child_id": meta.get("child_id", ""),
+                "parent_id": meta.get("parent_id", ""),
+                "source": meta.get("source", ""),
+                "type": meta.get("type", "image"),
+                "score": 1.0 - dist,
+            })
+        return hits
 
     async def close(self) -> None:
         """Release resources (no-op for ChromaDB)."""

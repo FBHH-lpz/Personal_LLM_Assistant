@@ -33,10 +33,11 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
 
-    # Ensure Milvus collection exists
+    # Ensure collections exist
     from app.api.dependencies import _get_dense_store
     dense = _get_dense_store()
     await dense.ensure_collection()
+    await dense.ensure_image_collection()
 
     logger.info("Server ready on %s:%d", settings.host, settings.port)
 

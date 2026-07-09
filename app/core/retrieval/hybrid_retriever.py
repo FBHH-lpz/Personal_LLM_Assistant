@@ -78,16 +78,22 @@ class HybridRetriever:
             lambda: self.bm25.search(query, top_k=top_k),
         )
 
-        # Dense is already async (API-based)
+        # Dense (text) + Dense (images) are both async
         dense_task = self.dense.search(query_embedding, top_k=top_k)
+        image_task = self.dense.search_images(query_embedding, top_k=top_k // 2)
 
-        bm25_results, dense_results = await asyncio.gather(bm25_task, dense_task)
+        bm25_results, dense_results, image_results = await asyncio.gather(
+            bm25_task, dense_task, image_task,
+        )
 
-        logger.debug("BM25 returned %d results, Dense returned %d results",
-                     len(bm25_results), len(dense_results))
+        logger.debug("BM25: %d, Dense: %d, Images: %d results",
+                     len(bm25_results), len(dense_results), len(image_results))
 
-        # 3. RRF Fusion
-        merged = self._rrf_fusion(bm25_results, dense_results, k=rrf_k, top_k=top_k)
+        # 3. RRF Fusion (three-way: BM25 + text dense + image dense)
+        merged = self._rrf_fusion_3way(
+            bm25_results, dense_results, image_results,
+            k=rrf_k, top_k=top_k,
+        )
 
         # 4. Resolve parent content for each result
         docs: list[RetrievedDoc] = []
@@ -117,29 +123,32 @@ class HybridRetriever:
         k: int = 60,
         top_k: int = 20,
     ) -> list[tuple[str, float]]:
-        """Reciprocal Rank Fusion: merge two ranked lists without score normalization.
+        """Two-way RRF: BM25 + Dense."""
+        return self._rrf_fusion_3way(bm25_results, dense_results, [], k=k, top_k=top_k)
 
-        Args:
-            bm25_results: (child_id, bm25_score) from BM25, sorted desc.
-            dense_results: list of dicts with keys 'child_id', 'score', etc., sorted desc.
-            k: RRF constant.
-            top_k: Number of results to return.
-
-        Returns:
-            List of (child_id, rrf_score) sorted by score descending.
-        """
+    def _rrf_fusion_3way(
+        self,
+        bm25_results: list[tuple[str, float]],
+        dense_results: list[dict],
+        image_results: list[dict],
+        k: int = 60,
+        top_k: int = 20,
+    ) -> list[tuple[str, float]]:
+        """Three-way RRF: BM25 + Dense(text) + Dense(images)."""
         scores: dict[str, float] = {}
 
-        # BM25 contribution
         for rank, (cid, _) in enumerate(bm25_results):
             scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank + 1)
 
-        # Dense contribution
         for rank, hit in enumerate(dense_results):
             cid = hit.get("child_id", hit.get("id", ""))
             if cid:
                 scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank + 1)
 
-        # Sort by RRF score descending
+        for rank, hit in enumerate(image_results):
+            cid = hit.get("child_id", hit.get("id", ""))
+            if cid:
+                scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank + 1)
+
         sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return sorted_items[:top_k]

@@ -45,6 +45,7 @@ async def main():
     logger.info("Initializing ChromaDB at %s", settings.chroma_db_path)
     dense = DenseStore(db_path=settings.chroma_db_path)
     await dense.ensure_collection()
+    await dense.ensure_image_collection()
 
     # Check existing count
     existing = await dense.count()
