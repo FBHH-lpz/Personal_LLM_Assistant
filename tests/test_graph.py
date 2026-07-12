@@ -22,7 +22,7 @@ class TestRewriteNode:
 
         assert "查询改写" in REWRITE_SYSTEM_PROMPT
         assert "代词" in REWRITE_SYSTEM_PROMPT
-        assert "EMPTY" in REWRITE_SYSTEM_PROMPT
+        assert "needs_retrieval" in REWRITE_SYSTEM_PROMPT
 
 
 class TestRespondNode:

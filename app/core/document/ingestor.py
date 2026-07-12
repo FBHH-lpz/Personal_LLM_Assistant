@@ -100,29 +100,44 @@ class DocumentIngestor:
         if match:
             lecture_num = match.group(1)
 
-        # ── 4. Text chunking (cross-page context preserved) ────
+        # ── 4. Build page → VLM description mapping ───────────
+        page_descriptions: dict[int, str] = {}
+        for page_num, desc_text in zip(image_bindings.keys(), image_descriptions):
+            page_descriptions[page_num] = desc_text
+
+        # ── 5. Text chunking ──────────────────────────────────
         lecture_tag = f"[课件{lecture_num}] " if lecture_num else ""
         groups = self.chunker.chunk(parsed.text, source_metadata=parsed.metadata or {})
-        for g in groups:
+        total_pages = max(parsed.page_count, 1)
+        total_parents = len(groups)
+
+        for i, g in enumerate(groups):
             g.parent_id = f"{file_prefix}_{g.parent_id}"
-            # Prepend lecture tag to parent so every chunk is findable by lecture number
             if lecture_tag:
                 g.parent_content = lecture_tag + g.parent_content
+
+            # Append VLM image description to parent if same page
+            est_page = int(i / max(total_parents, 1) * total_pages) + 1
+            img_desc = page_descriptions.get(est_page, "")
+            if img_desc:
+                g.parent_content = f"{g.parent_content}\n\n[本页图表分析] {img_desc}"
+
             for c in g.children:
                 c.parent_id = g.parent_id
                 c.content = lecture_tag + c.content if lecture_tag else c.content
                 c.id = f"{g.parent_id}_c_{c.id.split('_c_')[-1]}" if "_c_" in c.id else f"{g.parent_id}_c_0"
-        logger.info("Chunked: %d parents, %d children",
-                     len(groups), sum(len(g.children) for g in groups))
+        logger.info("Chunked: %d parents, %d children, %d with image descs",
+                     len(groups), sum(len(g.children) for g in groups),
+                     sum(1 for p in page_descriptions.values() if p))
 
-        # ── 4. Embed text chunks ──────────────────────────────
+        # ── 6. Embed text chunks ──────────────────────────────
         child_texts = [c.content for g in groups for c in g.children]
         child_ids = [c.id for g in groups for c in g.children]
 
         embedder = await self._get_embedder()
         embeddings = await embed_batch(child_texts, embedder)
 
-        # ── 5. Store text in main collection ──────────────────
+        # ── 7. Store text in main collection ──────────────────
         metadata_list = [
             {
                 "child_id": cid,
@@ -134,38 +149,25 @@ class DocumentIngestor:
         self.dense.insert(child_ids, embeddings, metadata_list)
         self.bm25.index_documents(child_texts, child_ids)
 
-        # ── 6. Store images in separate collection ─────────────
+        # ── 7b. Store images in separate collection (independent retrieval path)
         if image_descriptions:
             img_embeddings = await embed_batch(image_descriptions, embedder)
             img_metadata = [
                 {
                     "child_id": iid,
-                    "parent_id": next(
-                        (c.parent_id for g in groups for c in g.children
-                         if f"_p{page}" in (c.parent_id or "")),
-                        "",
-                    ),
                     "source": filepath.name,
                     "type": "image_description",
                 }
-                for iid, page in zip(image_chunk_ids, image_bindings.keys())
+                for iid in image_chunk_ids
             ]
             self.dense.insert_images(image_chunk_ids, img_embeddings, img_metadata)
             self.bm25.index_documents(image_descriptions, image_chunk_ids)
 
-            # Strong binding: store image as parent for text chunks on same page
-            for iid, desc in zip(image_chunk_ids, image_descriptions):
-                self.bm25.store_parent(
-                    iid, desc,
-                    {"source": filepath.name, "type": "image_description"},
-                )
-
-        # ── 7. Store text parents ──────────────────────────────
+        # ── 8. Store text parents (already contain VLM descriptions) ──
         for g in groups:
             self.bm25.store_parent(g.parent_id, g.parent_content, g.metadata)
 
-        logger.info("Ingested %s: %d text + %d image chunks",
-                     filepath.name, len(child_ids), len(image_chunk_ids))
+        logger.info("Ingested %s: %d text chunks", filepath.name, len(child_ids))
         return groups
 
     async def ingest_directory(self, directory: Path, glob_pattern: str = "*.pdf") -> int:

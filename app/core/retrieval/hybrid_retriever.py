@@ -1,7 +1,8 @@
-"""Hybrid Retriever — BM25 + Dense combined with RRF fusion.
+"""Hybrid Retriever — BM25 + Dense + Image RRF fusion.
 
-This is the core retrieval engine. It runs BM25 and dense search in
-parallel, then merges results via Reciprocal Rank Fusion (RRF).
+Three independent retrieval paths run in parallel, then merge via
+Reciprocal Rank Fusion (RRF). VLM image descriptions are also
+embedded into parent chunks during ingestion for deterministic binding.
 """
 
 from __future__ import annotations
@@ -24,18 +25,22 @@ class RetrievedDoc:
     """A retrieved document chunk with metadata."""
     child_id: str
     parent_id: str
-    content: str         # resolved from BM25 or parent store
+    content: str         # resolved from BM25 parent store (includes VLM descriptions)
     source: str = ""
     score: float = 0.0
 
 
 class HybridRetriever:
-    """BM25 + Dense hybrid retrieval with RRF fusion.
+    """BM25 + Dense(text) + Dense(image) hybrid retrieval with RRF fusion.
 
-    Usage::
+    Three independent paths:
+    1. BM25 keyword search (sparse)
+    2. Dense text vector search (semantic)
+    3. Dense image description vector search (visual)
 
-        retriever = HybridRetriever(dense_store, bm25_index, embedder)
-        docs = await retriever.search("Transformer架构是什么", top_k=20)
+    Results are merged via RRF. VLM descriptions are also deterministically
+    embedded into parent chunks during ingestion, so images reach the LLM
+    through two channels: independent retrieval + parent chunk binding.
     """
 
     def __init__(
@@ -56,29 +61,17 @@ class HybridRetriever:
         top_k: int = 20,
         rrf_k: int = 60,
     ) -> list[RetrievedDoc]:
-        """Run hybrid search and return merged, ranked results.
-
-        Args:
-            query: The search query (already rewritten if multi-turn).
-            top_k: Number of results to return after fusion.
-            rrf_k: RRF constant (default 60 from empirical studies).
-
-        Returns:
-            List of RetrievedDoc sorted by RRF score descending.
-        """
+        """Run three-way hybrid search and return merged, ranked results."""
         # 1. Get query embedding
         query_embedding = await self.embedder.aembed_single(query)
 
-        # 2. Run BM25 + Dense in parallel
+        # 2. Run BM25 + Dense(text) + Dense(image) in parallel
         loop = asyncio.get_event_loop()
 
-        # BM25 is CPU-bound: run in executor
         bm25_task = loop.run_in_executor(
             None,
             lambda: self.bm25.search(query, top_k=top_k),
         )
-
-        # Dense (text) + Dense (images) are both async
         dense_task = self.dense.search(query_embedding, top_k=top_k)
         image_task = self.dense.search_images(query_embedding, top_k=top_k // 2)
 
@@ -86,16 +79,16 @@ class HybridRetriever:
             bm25_task, dense_task, image_task,
         )
 
-        logger.debug("BM25: %d, Dense: %d, Images: %d results",
+        logger.debug("BM25: %d, Dense(text): %d, Dense(image): %d results",
                      len(bm25_results), len(dense_results), len(image_results))
 
-        # 3. RRF Fusion (three-way: BM25 + text dense + image dense)
-        merged = self._rrf_fusion_3way(
+        # 3. Three-way RRF Fusion
+        merged = self._rrf_fusion(
             bm25_results, dense_results, image_results,
             k=rrf_k, top_k=top_k,
         )
 
-        # 4. Resolve parent content for each result
+        # 4. Resolve parent content (includes VLM descriptions from ingestion)
         docs: list[RetrievedDoc] = []
         for child_id, rrf_score in merged:
             parent_ctx = self.bm25.get_parent(
@@ -120,21 +113,11 @@ class HybridRetriever:
         self,
         bm25_results: list[tuple[str, float]],
         dense_results: list[dict],
-        k: int = 60,
-        top_k: int = 20,
-    ) -> list[tuple[str, float]]:
-        """Two-way RRF: BM25 + Dense."""
-        return self._rrf_fusion_3way(bm25_results, dense_results, [], k=k, top_k=top_k)
-
-    def _rrf_fusion_3way(
-        self,
-        bm25_results: list[tuple[str, float]],
-        dense_results: list[dict],
         image_results: list[dict],
         k: int = 60,
         top_k: int = 20,
     ) -> list[tuple[str, float]]:
-        """Three-way RRF: BM25 + Dense(text) + Dense(images)."""
+        """Three-way RRF: BM25 + Dense(text) + Dense(image)."""
         scores: dict[str, float] = {}
 
         for rank, (cid, _) in enumerate(bm25_results):

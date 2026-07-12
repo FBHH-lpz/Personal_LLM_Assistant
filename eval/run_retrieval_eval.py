@@ -15,8 +15,8 @@ from eval.metrics import hit_rate, mrr, avg_recall, avg_ndcg
 async def main():
     # Load
     bm25 = BM25Index()
-    bm25.load("data/bm25_index_v2.pkl")
-    dense = DenseStore(db_path="data/milvus_eval.db")
+    bm25.load("data/bm25_index.pkl")
+    dense = DenseStore(db_path="data/chroma_db")
     await dense.ensure_collection()
     embedder = get_embedding_provider()
     retriever = HybridRetriever(dense, bm25, embedder)

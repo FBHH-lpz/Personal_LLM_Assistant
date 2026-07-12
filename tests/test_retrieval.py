@@ -85,7 +85,7 @@ class TestRRFFusion:
             {"child_id": "c_1", "score": 0.5},
         ]
 
-        fused = retriever._rrf_fusion(bm25, dense, k=60, top_k=10)
+        fused = retriever._rrf_fusion(bm25, dense, [], k=60, top_k=10)
         ids = [f[0] for f in fused]
 
         # c_2 appears in both lists → should rank high

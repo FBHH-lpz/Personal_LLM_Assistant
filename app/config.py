@@ -44,7 +44,11 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 20           # initial retrieval per branch
     rerank_top_k: int = 5               # after cross-encoder
     rrf_k: int = 60                     # RRF constant
+    cross_modal_boost: float = 0.05      # same-page text↔image boost (0=off)
     bm25_index_path: str = str(project_root / "data" / "bm25_index.pkl")
+
+    # ── PDF Parser ─────────────────────────────────────────────
+    pdf_parser: Literal["pymupdf", "docling"] = "docling"
 
     # ── Chunking ───────────────────────────────────────────────
     child_chunk_size: int = 200
